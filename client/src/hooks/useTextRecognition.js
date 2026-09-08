@@ -1,19 +1,27 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { createWorker, PSM } from 'tesseract.js'
 
+/**
+ * useTextRecognition
+ * Loads Tesseract with English, Hindi, and Marathi language data
+ * together (all three loaded once, Tesseract tries all simultaneously
+ * per recognition -- no separate "pick a language" step needed from
+ * the user). First load downloads all three trained-data files (a few
+ * MB each), cached by the browser after that. Combined-language mode
+ * is a bit slower per recognition than English-only, but means the
+ * same "Read this" button just works regardless of which of the three
+ * scripts is in front of the camera.
+ */
 export function useTextRecognition() {
   const workerRef = useRef(null)
-  const [ocrStatus, setOcrStatus] = useState('loading') 
-  
+  const [ocrStatus, setOcrStatus] = useState('loading') // loading | ready | error
+
   useEffect(() => {
     let cancelled = false
 
     async function loadWorker() {
       try {
-        const worker = await createWorker('eng')
-        // AUTO handles the mix of layouts this app sees (a single word
-        // on a label vs. a full paragraph on a page) far better than
-        // the previous default, which assumed one uniform text block.
+        const worker = await createWorker(['eng', 'hin', 'mar'])
         await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO })
         if (cancelled) {
           worker.terminate()
