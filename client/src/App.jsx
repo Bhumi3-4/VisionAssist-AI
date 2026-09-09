@@ -22,11 +22,32 @@ import { isLikelyValidText } from './utils/textValidation'
 import { detectSpeechLang } from './utils/detectScript'
 import { matchCommand } from './utils/commands'
 import { speak, stopSpeaking } from './utils/speech'
-import { saveHistoryEntry, updatePreferences } from './utils/api'
+
+
+import { saveHistoryEntry, updatePreferences, getCurrentUser } from './utils/api'
 
 const TEXT_SCALES = [100, 125, 150, 200]
 const HELP_TEXT =
   'You can say: what\'s around me, read this, repeat, stop, zoom in, zoom out, bigger text, smaller text, watch for obstacles, stop obstacle watch, or help.'
+
+
+function nearestScaleIndex(value) {
+  let bestIdx = 0
+  let bestDiff = Infinity
+  TEXT_SCALES.forEach((scale, idx) => {
+    const diff = Math.abs(scale - value)
+    if (diff < bestDiff) {
+      bestDiff = diff
+      bestIdx = idx
+    }
+  })
+  return bestIdx
+}
+
+
+function clampZoom(z) {
+  return Math.min(3, Math.max(1, +z.toFixed(1)))
+}
 
 export default function App() {
   const [status, setStatus] = useState('Point the camera, then tap a button below.')
@@ -75,6 +96,36 @@ export default function App() {
   }, [token, fontScale, highContrast])
 
   useEffect(() => {
+    if (!token || user) return
+    let cancelled = false
+
+    getCurrentUser(token)
+      .then((data) => {
+        if (cancelled || !data) return
+        setUser(data.user ?? data)
+        const prefs = data.user?.preferences ?? data.preferences
+        if (prefs) {
+          if (typeof prefs.fontScale === 'number') {
+            setFontScale(TEXT_SCALES[nearestScaleIndex(prefs.fontScale)])
+          }
+          if (typeof prefs.highContrast === 'boolean') {
+            setHighContrast(prefs.highContrast)
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          localStorage.removeItem('vaToken')
+          setToken(null)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [token, user])
+
+  useEffect(() => {
     if (modelStatus === 'loading') setStatus('Loading detection model… (first time only)')
     if (modelStatus === 'ready' && cameraStatus === 'ready') {
       setStatus('Point the camera, then tap a button below.')
@@ -88,7 +139,9 @@ export default function App() {
     setUser(newUser)
     setShowAccountPanel(false)
     if (newUser?.preferences) {
-      setFontScale(newUser.preferences.fontScale ?? 100)
+      
+      const incomingScale = newUser.preferences.fontScale ?? 100
+      setFontScale(TEXT_SCALES[nearestScaleIndex(incomingScale)])
       setHighContrast(Boolean(newUser.preferences.highContrast))
     }
     speak(`Welcome, ${newUser.name}`)
@@ -172,20 +225,24 @@ export default function App() {
     setStatus('Stopped.')
   }, [])
 
-  const handleZoomIn = useCallback(() => setZoom((z) => Math.min(3, +(z + 0.2).toFixed(1))), [])
-  const handleZoomOut = useCallback(() => setZoom((z) => Math.max(1, +(z - 0.2).toFixed(1))), [])
+  // FIX #3: use the shared clamp helper
+  const handleZoomIn = useCallback(() => setZoom((z) => clampZoom(z + 0.2)), [])
+  const handleZoomOut = useCallback(() => setZoom((z) => clampZoom(z - 0.2)), [])
+
 
   const handleTextBigger = useCallback(() => {
     setFontScale((s) => {
-      const idx = TEXT_SCALES.indexOf(s)
-      return TEXT_SCALES[Math.min(TEXT_SCALES.length - 1, idx + 1)]
+      const idx = nearestScaleIndex(s)
+      const nextIdx = s >= TEXT_SCALES[idx] ? Math.min(TEXT_SCALES.length - 1, idx + 1) : idx
+      return TEXT_SCALES[nextIdx]
     })
   }, [])
 
   const handleTextSmaller = useCallback(() => {
     setFontScale((s) => {
-      const idx = TEXT_SCALES.indexOf(s)
-      return TEXT_SCALES[Math.max(0, idx - 1)]
+      const idx = nearestScaleIndex(s)
+      const nextIdx = s <= TEXT_SCALES[idx] ? Math.max(0, idx - 1) : idx
+      return TEXT_SCALES[nextIdx]
     })
   }, [])
 
@@ -280,7 +337,14 @@ export default function App() {
       {showHistoryPanel && token && <HistoryPanel token={token} />}
 
       {showSettings && (
-        <AccessibilityBar fontScale={fontScale} onFontScaleChange={setFontScale} highContrast={highContrast} onToggleContrast={setHighContrast} zoom={zoom} onZoomChange={setZoom} />
+        <AccessibilityBar
+          fontScale={fontScale}
+          onFontScaleChange={setFontScale}
+          highContrast={highContrast}
+          onToggleContrast={setHighContrast}
+          zoom={zoom}
+          onZoomChange={(z) => setZoom(clampZoom(z))}
+        />
       )}
 
       <CameraView videoRef={videoRef} canvasRef={canvasRef} status={cameraStatus} errorMessage={errorMessage} zoom={zoom} />
