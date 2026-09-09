@@ -22,14 +22,11 @@ import { isLikelyValidText } from './utils/textValidation'
 import { detectSpeechLang } from './utils/detectScript'
 import { matchCommand } from './utils/commands'
 import { speak, stopSpeaking } from './utils/speech'
-
-
 import { saveHistoryEntry, updatePreferences, getCurrentUser } from './utils/api'
 
 const TEXT_SCALES = [100, 125, 150, 200]
 const HELP_TEXT =
   'You can say: what\'s around me, read this, repeat, stop, zoom in, zoom out, bigger text, smaller text, watch for obstacles, stop obstacle watch, or help.'
-
 
 function nearestScaleIndex(value) {
   let bestIdx = 0
@@ -43,7 +40,6 @@ function nearestScaleIndex(value) {
   })
   return bestIdx
 }
-
 
 function clampZoom(z) {
   return Math.min(3, Math.max(1, +z.toFixed(1)))
@@ -95,6 +91,9 @@ export default function App() {
     return () => clearTimeout(timeout)
   }, [token, fontScale, highContrast])
 
+  // Restores `user` after a page refresh: the token survives in
+  // localStorage, but React state doesn't, so without this you'd see
+  // "Logged in" with no name and preferences wouldn't re-apply.
   useEffect(() => {
     if (!token || user) return
     let cancelled = false
@@ -113,10 +112,17 @@ export default function App() {
           }
         }
       })
-      .catch(() => {
-        if (!cancelled) {
+      .catch((err) => {
+        if (cancelled) return
+        // Only clear the token if it's ACTUALLY invalid/expired (401).
+        // Any other failure -- network error, Render free-tier cold
+        // start, a transient 500 -- means we simply don't know yet,
+        // and shouldn't force a valid session to log out over it.
+        if (err.status === 401) {
           localStorage.removeItem('vaToken')
           setToken(null)
+        } else {
+          console.warn('Could not restore session (will retry on next reload):', err.message)
         }
       })
 
@@ -139,7 +145,6 @@ export default function App() {
     setUser(newUser)
     setShowAccountPanel(false)
     if (newUser?.preferences) {
-      
       const incomingScale = newUser.preferences.fontScale ?? 100
       setFontScale(TEXT_SCALES[nearestScaleIndex(incomingScale)])
       setHighContrast(Boolean(newUser.preferences.highContrast))
@@ -225,10 +230,8 @@ export default function App() {
     setStatus('Stopped.')
   }, [])
 
-  // FIX #3: use the shared clamp helper
   const handleZoomIn = useCallback(() => setZoom((z) => clampZoom(z + 0.2)), [])
   const handleZoomOut = useCallback(() => setZoom((z) => clampZoom(z - 0.2)), [])
-
 
   const handleTextBigger = useCallback(() => {
     setFontScale((s) => {
@@ -337,14 +340,7 @@ export default function App() {
       {showHistoryPanel && token && <HistoryPanel token={token} />}
 
       {showSettings && (
-        <AccessibilityBar
-          fontScale={fontScale}
-          onFontScaleChange={setFontScale}
-          highContrast={highContrast}
-          onToggleContrast={setHighContrast}
-          zoom={zoom}
-          onZoomChange={(z) => setZoom(clampZoom(z))}
-        />
+        <AccessibilityBar fontScale={fontScale} onFontScaleChange={setFontScale} highContrast={highContrast} onToggleContrast={setHighContrast} zoom={zoom} onZoomChange={(z) => setZoom(clampZoom(z))} />
       )}
 
       <CameraView videoRef={videoRef} canvasRef={canvasRef} status={cameraStatus} errorMessage={errorMessage} zoom={zoom} />
