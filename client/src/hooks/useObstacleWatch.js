@@ -1,23 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { assessObstacleRisk } from '../utils/obstacleDetection'
 import { sampleCenterFrame, frameMotionEnergy, rollingBaseline } from '../utils/proximitySensor'
+import { normalizeYoloResults } from '../utils/normalizeYoloResults'
 import { playAlertBeep } from '../utils/alertSound'
 import { speak } from '../utils/speech'
 
 const CHECK_INTERVAL_MS = 800
 const ALERT_COOLDOWN_MS = 4000
 
-// Fallback (classification-free) proximity tuning.
-// BASELINE_HISTORY_SIZE ticks are used to learn "normal" noise for
-// THIS camera/lighting before any alert can fire at all -- this is
-// what fixes the constant false triggers: no fixed magic number, the
-// threshold adapts to the actual environment.
 const BASELINE_HISTORY_SIZE = 6
-const SPIKE_MULTIPLIER = 1.8 // current reading must be this many times the recent (quiet-only) baseline
-const MIN_ABSOLUTE_FLOOR = 12 // and still be at least this much change, even if baseline is near-zero
-const SUSTAINED_TICKS_REQUIRED = 2 // must stay elevated this many ticks in a row, not one spike
+const SPIKE_MULTIPLIER = 1.8
+const MIN_ABSOLUTE_FLOOR = 12
+const SUSTAINED_TICKS_REQUIRED = 2
 
-export function useObstacleWatch({ videoRef, canvasRef, detect, enabled }) {
+export function useObstacleWatch({ videoRef, canvasRef, detect, yoloPredict, enabled }) {
   const [lastAlert, setLastAlert] = useState(null)
   const previousRef = useRef(null)
   const lastAlertTimeRef = useRef(0)
@@ -32,10 +28,25 @@ export function useObstacleWatch({ videoRef, canvasRef, detect, enabled }) {
     if (!video || !video.videoWidth) return
 
     const predictions = await detect(video)
-    const result = assessObstacleRisk(predictions, video.videoWidth, video.videoHeight, previousRef.current)
+
+    // Custom YOLO model (stairs/benches/crosswalks/pedestrian lights)
+    // is ADDITIVE: if it's not provided, not loaded yet, or errors for
+    // any reason, we just proceed with COCO-SSD's predictions alone --
+    // exactly as this function behaved before this model existed.
+    let combinedPredictions = predictions
+    if (yoloPredict) {
+      try {
+        const rawYoloResult = await yoloPredict(video)
+        const yoloPredictions = normalizeYoloResults(rawYoloResult)
+        combinedPredictions = [...predictions, ...yoloPredictions]
+      } catch (err) {
+        console.error('Custom obstacle model prediction failed this tick, continuing with standard detection only:', err)
+      }
+    }
+
+    const result = assessObstacleRisk(combinedPredictions, video.videoWidth, video.videoHeight, previousRef.current)
     if (result.label) previousRef.current = { class: result.label, areaRatio: result.areaRatio }
 
-    // --- Fallback: classification-free proximity check ---
     let genericRisk = false
     const currentSample = sampleCenterFrame(video)
     const motion = frameMotionEnergy(prevSampleRef.current, currentSample)
@@ -47,17 +58,12 @@ export function useObstacleWatch({ videoRef, canvasRef, detect, enabled }) {
       sustainedHighRef.current = isSpike ? sustainedHighRef.current + 1 : 0
       genericRisk = sustainedHighRef.current >= SUSTAINED_TICKS_REQUIRED
 
-      // Only feed QUIET readings into the baseline -- if we included
-      // readings during an actual approach, the baseline would rise
-      // right along with it and the spike would never register as
-      // "above normal". This keeps the baseline representing what
-      // normal/no-obstacle actually looks like for this camera.
       if (!isSpike) {
         motionHistoryRef.current.push(motion)
         if (motionHistoryRef.current.length > BASELINE_HISTORY_SIZE) motionHistoryRef.current.shift()
       }
     } else {
-      sustainedHighRef.current = 0 // named-object path handled it, reset fallback counter
+      sustainedHighRef.current = 0
     }
 
     prevSampleRef.current = currentSample
@@ -93,7 +99,7 @@ export function useObstacleWatch({ videoRef, canvasRef, detect, enabled }) {
         ctx.strokeRect(5, 5, canvas.width - 10, canvas.height - 10)
       }
     }
-  }, [videoRef, canvasRef, detect])
+  }, [videoRef, canvasRef, detect, yoloPredict])
 
   useEffect(() => {
     if (!enabled) {

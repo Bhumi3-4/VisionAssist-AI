@@ -5,14 +5,28 @@
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>VisionAssist AI</title>
-
-    <!-- Space Grotesk: headings. Inter: body (large, legible). IBM Plex Mono: status readouts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
+
+    <!--
+      @ultralytics/yolo internally does a dynamic import('@litertjs/core')
+      that neither Vite's dev server nor a real Rollup production build
+      resolves correctly (confirmed by testing both). This import map
+      tells the BROWSER directly how to resolve that exact bare
+      specifier at runtime, bypassing bundler resolution entirely --
+      must be declared before any module scripts load.
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "@litertjs/core": "https://cdn.jsdelivr.net/npm/@litertjs/core@2.5.3/+esm"
+        }
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

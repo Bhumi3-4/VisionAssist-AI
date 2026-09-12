@@ -10,9 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@litertjs/core": "^2.5.3",
     "@teachablemachine/image": "^0.8.5",
     "@tensorflow-models/coco-ssd": "^2.2.3",
     "@tensorflow/tfjs": "^4.22.0",
+    "@ultralytics/yolo": "^0.0.43",
     "lucide-react": "^1.26.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -21,8 +23,8 @@
   "devDependencies": {
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.4",
+    "@vitejs/plugin-react": "^4.3.1",
     "oxlint": "^1.71.0",
-    "vite": "^8.1.5"
+    "vite": "^5.4.1"
   }
 }

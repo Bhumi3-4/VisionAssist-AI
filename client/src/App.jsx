@@ -11,6 +11,7 @@ import HistoryPanel from './components/HistoryPanel'
 import ActionButton from './components/ActionButton'
 import { useCamera } from './hooks/useCamera'
 import { useObjectDetection } from './hooks/useObjectDetection'
+import { useYoloObstacleModel } from './hooks/useYoloObstacleModel'
 import { useCustomObjectRecognition } from './hooks/useCustomObjectRecognition'
 import { useTextRecognition } from './hooks/useTextRecognition'
 import { useObstacleWatch } from './hooks/useObstacleWatch'
@@ -66,7 +67,14 @@ export default function App() {
   const { ocrStatus, recognize } = useTextRecognition()
 
   const obstacleEnabled = obstacleOn && modelStatus === 'ready' && cameraStatus === 'ready'
-  const { lastAlert } = useObstacleWatch({ videoRef, canvasRef, detect, enabled: obstacleEnabled })
+  const { predict: predictYoloObstacles } = useYoloObstacleModel(obstacleEnabled)
+  const { lastAlert } = useObstacleWatch({
+    videoRef,
+    canvasRef,
+    detect,
+    yoloPredict: predictYoloObstacles,
+    enabled: obstacleEnabled,
+  })
 
   useEffect(() => {
     if (lastAlert) {
